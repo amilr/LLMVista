@@ -1,0 +1,113 @@
+body {
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    background-color: #FFFFFF;
+    margin: 0;
+    padding: 0;
+}
+
+.header {
+    padding: 10px 0;
+    text-align: center;
+    border-bottom: 1px solid #CCCCCC;
+}
+
+h1 {
+    color: #FFFFFF;
+    font-size: 36px;
+    margin: 0;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.subtitle {
+    color: darkblue;
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 5px;
+}
+
+.main-content {
+    width: 600px;
+    margin: 20px auto;
+}
+
+.search-box {
+    background-color: #EFEFEF;
+    border: 2px solid #000080;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.form-table {
+    width: 100%;
+    border-collapse: separate;
+}
+
+input[type="text"] {
+    width: 97%;
+    padding: 5px;
+    font-size: 14px;
+    border: 1px solid #666666;
+    height: 20px;
+}
+
+select {
+    width: 100%;
+    padding: 3px;
+    font-size: 14px;
+    border: 1px solid #666666;
+    background-color: #FFFFFF;
+    height: 24px;
+}
+
+input[type="submit"] {
+    width: 100%;
+    background-color: #000080;
+    color: #FFFFFF;
+    border: 1px solid #000000;
+    padding: 3px 10px;
+    font-weight: bold;
+    font-size: 12px;
+    cursor: pointer;
+    height: 30px;
+}
+
+.features {
+    margin-top: 20px;
+    border: 1px solid #CCCCCC;
+    padding: 15px;
+    background-color: #FAFAFA;
+}
+
+.features ul {
+    margin: 0;
+    padding-left: 20px;
+    color: #000080;
+    line-height: 1.6;
+}
+
+.features li {
+    margin: 5px 0;
+}
+
+.footer {
+    text-align: center;
+    font-size: 12px;
+    color: #666666;
+    margin: 20px 0;
+    border-top: 1px solid #CCCCCC;
+    padding-top: 10px;
+}
+
+a {
+    color: #000080;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.logo {
+    vertical-align: middle;
+}
