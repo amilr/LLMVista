@@ -138,7 +138,6 @@ def generate():
     )
     
     result = response.text
-    print(result)
 
     html = get_html(result)
 
