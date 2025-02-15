@@ -1,5 +1,6 @@
 import os
 from flask import Flask, render_template, request, session
+from flask_caching import Cache
 from pydantic import BaseModel
 from google import genai
 import prompts
@@ -9,6 +10,12 @@ from typing import List, Tuple
 
 app = Flask(__name__)
 app.secret_key = os.getenv('APP_SECRET_KEY')
+app.config["SECRET_KEY"] = os.getenv('CACHE_SECRET_KEY')
+app.config["CACHE_TYPE"] = "SimpleCache"
+app.config["CACHE_DEFAULT_TIMEOUT"] = 300
+
+cache = Cache(app)
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 class SearchResult(BaseModel):
@@ -111,12 +118,19 @@ def search():
     return render_template('search.html', results=search_results)
 
 
-@app.route('/generate', methods=['GET'])
-def generate():
-    index = int(request.args.get('index'))
+@app.route('/go', methods=['GET'])
+def go():
+    url = request.args.get('url')
     search_results = SearchResults.model_validate_json(session['search_results'])
-    search_result = search_results.items[index]
+    search_result = next(result for result in search_results.items if result.url == url)
     print(search_result)
+
+    all_keys = list(cache.cache._cache.keys())  # Access internal dict
+    print("Cached keys:", all_keys)
+
+    url_key = f'url:{url}'
+    if cache.has(url_key):
+        return cache.get(url_key)
 
     metaprompt = get_meta_prompt(search_result.type, search_result.title, search_result.meta)
 
@@ -127,7 +141,6 @@ def generate():
     )
 
     gen_prompt = response.text
-    print(gen_prompt)
     
     prompt = get_webpage_prompt(search_result.type, search_result.title, gen_prompt)
     print(prompt)
@@ -140,6 +153,7 @@ def generate():
     result = response.text
 
     html = get_html(result)
+    cache.set(url_key, html)
 
     return html
 

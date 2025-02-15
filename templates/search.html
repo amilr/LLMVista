@@ -14,7 +14,7 @@
         <div class="result-count">Documents 1-{{results|length}} of about 10000 matching the query, best matches only.</div>
         {% for result in results %}
         <div class="search-result">
-            <a href="{{ url_for('generate', index=loop.index0) }}" class="result-title">{{ result.title }}</a>
+            <a href="{{ url_for('go', url=result.url) }}" class="result-title">{{ result.title }}</a>
             <div class="result-meta">{{ result.meta }}</div>
             <div class="result-url">{{ result.url }}</div>
         </div>
