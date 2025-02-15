@@ -14,21 +14,14 @@
     <div class="main-content">
         <div class="search-box">
             <form method="POST" action="{{ url_for('search') }}">
-                <table class="form-table">
-                    <tr>
-                        <td>
-                            <input type="text" id="topic" name="topic" placeholder="Enter your search here">
-                        </td>
-                        <td>
-                            <input type="submit" value="Submit">
-                        </td>
-                    </tr>
-                </table>
+                <div class="search-container">
+                    <input type="text" id="topic" name="topic" placeholder="Enter your search here">
+                    <input type="submit" value="Submit">
+                </div>
             </form>
         </div>
     </div>
-    
-    <div class="footer">
+        <div class="footer">
         Copyright © 2025 Reyes Research. All rights reserved.
     </div>
 </body>

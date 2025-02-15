@@ -22,7 +22,7 @@ Find 5 topics related to {} that one might write about for a {}
 """
 
 META_JOURNAL = """
-Create a 300 word blog post titled '{}' about {}.
+Create a 500 word blog post titled '{}' about {}.
 Create a fictional persona that wrote this post.
 """
 
@@ -80,7 +80,7 @@ inline CSS
 """
 
 META_EZINE = """
-Create a 300 word magazine article titled '{}' about {}.
+Create a 500 word magazine article titled '{}' about {}.
 Create a fictional persona and publication that wrote this article.
 """
 

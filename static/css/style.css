@@ -27,7 +27,7 @@ h1 {
 }
 
 .main-content {
-    width: 600px;
+    width: 80%;
     margin: 20px auto;
 }
 
@@ -43,8 +43,16 @@ h1 {
     border-collapse: separate;
 }
 
+/* Update these styles in your existing CSS */
+.search-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 input[type="text"] {
-    width: 97%;
+    flex: 1;
+    min-width: 200px;
     padding: 5px;
     font-size: 14px;
     border: 1px solid #666666;
@@ -61,7 +69,8 @@ select {
 }
 
 input[type="submit"] {
-    width: 100%;
+    width: auto;
+    min-width: 100px;
     background-color: #000080;
     color: #FFFFFF;
     border: 1px solid #000000;

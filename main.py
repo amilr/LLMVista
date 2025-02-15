@@ -6,7 +6,6 @@ import prompts
 import random
 from datetime import datetime, timedelta
 from typing import List, Tuple
-import re
 
 app = Flask(__name__)
 app.secret_key = os.getenv('APP_SECRET_KEY')
