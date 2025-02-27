@@ -69,7 +69,8 @@ def get_webpage_prompt(page_type, title, content):
             ])
     elif page_type == 'personal':
         prompt = random.choice([
-            prompts.PERSONAL_1
+            prompts.PERSONAL_1,
+            prompts.PERSONAL_2
             ])
     else:
         return None
@@ -98,31 +99,56 @@ def home():
 @app.route('/search', methods=['POST'])
 def search():
     topic = request.form['topic']
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    response = client.models.generate_content(
-        model='gemini-2.0-flash',
-        contents=prompts.GEN_RESULTS.format(topic),
-        config={
-            'response_mime_type': 'application/json',
-            'response_schema': SearchResults,
-        }
-    )
     
-    results = response.parsed
-    search_results = results.items
-    print(search_results)
-
-    session['search_results'] = results.model_dump_json()
+    # Create a cache key based on the topic
+    cache_key = f'search_results:{topic}'
+    
+    # Check if this topic's results are already in the cache
+    if cache.has(cache_key):
+        # Use cached results
+        search_results_json = cache.get(cache_key)
+        search_results = SearchResults.model_validate_json(search_results_json).items
+        print("Using cached search results for:", topic)
+    else:
+        # Generate new results
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompts.GEN_RESULTS.format(topic),
+            config={
+                'response_mime_type': 'application/json',
+                'response_schema': SearchResults,
+            }
+        )
+        
+        results = response.parsed
+        search_results = results.items
+        print("Generated new search results for:", topic)
+        
+        # Store results in cache
+        cache.set(cache_key, results.model_dump_json())
+    
+    # Save the cache key in session to retrieve it later
+    session['search_results_key'] = cache_key
 
     return render_template('search.html', results=search_results)
-
 
 @app.route('/go', methods=['GET'])
 def go():
     url = request.args.get('url')
-    search_results = SearchResults.model_validate_json(session['search_results'])
-    search_result = next(result for result in search_results.items if result.url == url)
+    
+    # Get cache key from session and retrieve results from cache
+    cache_key = session.get('search_results_key')
+    if not cache_key or not cache.has(cache_key):
+        return "Search results expired, please search again", 404
+        
+    search_results_json = cache.get(cache_key)
+    search_results = SearchResults.model_validate_json(search_results_json)
+    search_result = next((result for result in search_results.items if result.url == url), None)
+    
+    if not search_result:
+        return "URL not found in search results", 404
+    
     print(search_result)
 
     all_keys = list(cache.cache._cache.keys())  # Access internal dict
@@ -133,7 +159,6 @@ def go():
         return cache.get(url_key)
 
     metaprompt = get_meta_prompt(search_result.type, search_result.title, search_result.meta)
-
     client = genai.Client(api_key=GEMINI_API_KEY)
     response = client.models.generate_content(
         model='gemini-2.0-flash-lite',

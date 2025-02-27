@@ -183,3 +183,20 @@ Featured things like “About Me” sections, guestbooks, and visitor counters.
 inline CSS
 </FEATURE>
 """
+
+PERSONAL_2 = """
+<CONTENT>
+{}
+</CONTENT>
+
+<TITLE>
+{}
+<TITLE>
+
+Create a full HTML page using this content with the following features.
+<FEATURES>
+Colorful
+Filled with SVG animations
+inline CSS
+</FEATURE>
+"""
