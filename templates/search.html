@@ -24,3 +24,16 @@
     </div>
 </body>
 </html>
+
+<!-- Add this to your search.html template where the links are displayed -->
+<script>
+    document.querySelectorAll('.search-result-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            // Optional: show loading indicator
+            const resultElement = link.closest('.result');
+            if (resultElement) {
+                resultElement.innerHTML += '<div class="loading">Loading page...</div>';
+            }
+        });
+    });
+</script>

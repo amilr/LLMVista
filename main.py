@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, Response, stream_with_context
 from flask_caching import Cache
 from pydantic import BaseModel
 from google import genai
@@ -149,38 +149,72 @@ def go():
     if not search_result:
         return "URL not found in search results", 404
     
-    print(search_result)
-
-    all_keys = list(cache.cache._cache.keys())  # Access internal dict
-    print("Cached keys:", all_keys)
-
     url_key = f'url:{url}'
     if cache.has(url_key):
         return cache.get(url_key)
 
     metaprompt = get_meta_prompt(search_result.type, search_result.title, search_result.meta)
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    response = client.models.generate_content(
-        model='gemini-2.0-flash-lite',
-        contents=metaprompt
-    )
-
-    gen_prompt = response.text
     
-    prompt = get_webpage_prompt(search_result.type, search_result.title, gen_prompt)
-    print(prompt)
-    
-    response = client.models.generate_content(
-        model='gemini-2.0-flash-lite',
-        contents=prompt
-    )
-    
-    result = response.text
+    # Create streaming response
+    def generate_html():
+        # First yield a basic HTML structure to start with
+        yield ''
+        
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # Get content generation parameters
+        meta_response = client.models.generate_content(
+            model='gemini-2.0-flash-lite',
+            contents=metaprompt
+        )
+        gen_prompt = meta_response.text
+        prompt = get_webpage_prompt(search_result.type, search_result.title, gen_prompt)
+        
+        # Stream the response chunks
+        html_buffer = ""
+        html_started = False
+        html_ended = False
+        for chunk in client.models.generate_content_stream(
+            model='gemini-2.0-flash-lite',
+            contents=prompt
+        ):
+            if html_ended:
+                break
 
-    html = get_html(result)
-    cache.set(url_key, html)
+            if hasattr(chunk, 'text'):
+                chunk_text = chunk.text
 
-    return html
+                print('In : {}'.format(chunk_text))
+                
+                if "<html" in chunk_text:
+                    start_index = chunk_text.find("<html")
+                    chunk_text = chunk_text[start_index:]
+                    html_started = True
+                elif "</html>" in chunk_text:
+                    end_index = chunk_text.find("</html>") + len("</html>")
+                    chunk_text = chunk_text[:end_index]
+                    html_ended = True
+                
+                if not html_started:
+                    continue
+
+                print('Out: {}'.format(chunk_text))
+                html_buffer += chunk_text
+
+                if len(html_buffer) > 20000:
+                    break
+                
+                # Check if we have complete HTML tags to send
+                # This is a simple approach - you might need more sophisticated parsing
+                yield chunk_text
+        
+        print("HTML buffer length:", len(html_buffer))
+        
+        # Cache the final result
+        final_html = get_html(html_buffer)
+        cache.set(url_key, final_html)
+    
+    return Response(stream_with_context(generate_html()), mimetype='text/html')
 
 if __name__ == '__main__':
     app.run(debug=True)
