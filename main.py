@@ -8,11 +8,13 @@ import random
 from datetime import datetime, timedelta
 from typing import List, Tuple
 
+CACHE_TIMEOUT = 300
+
 app = Flask(__name__)
 app.secret_key = os.getenv('APP_SECRET_KEY')
 app.config["SECRET_KEY"] = os.getenv('CACHE_SECRET_KEY')
 app.config["CACHE_TYPE"] = "SimpleCache"
-app.config["CACHE_DEFAULT_TIMEOUT"] = 300
+app.config["CACHE_DEFAULT_TIMEOUT"] = CACHE_TIMEOUT
 
 cache = Cache(app)
 
@@ -141,11 +143,14 @@ def go():
     cache_key = session.get('search_results_key')
     if not cache_key or not cache.has(cache_key):
         return "Search results expired, please search again", 404
-        
+    
     search_results_json = cache.get(cache_key)
     search_results = SearchResults.model_validate_json(search_results_json)
     search_result = next((result for result in search_results.items if result.url == url), None)
-    
+
+    # reset search results to extend timeout
+    cache.set(cache_key, search_results_json, timeout=CACHE_TIMEOUT)
+
     if not search_result:
         return "URL not found in search results", 404
     
