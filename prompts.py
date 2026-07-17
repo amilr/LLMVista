@@ -38,7 +38,7 @@ JOURNAL_1 = """
 Create a full HTML page using this content with the following features.
 <FEATURES>
 90s Geocities design
-no images
+ include one generated image supplied separately in the final instructions
 inline CSS
 </FEATURE>
 """
@@ -56,7 +56,7 @@ Create a full HTML page using this content with the following features.
 <FEATURES>
 dark Livejournal design
 A few fictional comments
-no images
+ include one generated image supplied separately in the final instructions
 inline CSS
 </FEATURE>
 """
@@ -74,7 +74,7 @@ Create a full HTML page using this content with the following features.
 <FEATURES>
 mid 2000s Wordpress design
 A few fictional comments
-no images
+ include one generated image supplied separately in the final instructions
 inline CSS
 </FEATURE>
 """
@@ -105,7 +105,7 @@ Create a full HTML page using this content with the following features.
 	8.	Blockquote or Indented Callouts - Important quotes or key takeaways were indented or put in a light gray box.
 	9.	Simple Footer with Copyright & Contact Links - The bottom had a basic copyright notice, privacy policy, and email contact.
 	10.	Minimal JavaScript or Interactivity - No heavy animations—just static HTML with some rollover effects for navigation.
-    11. No images!
+    11. Include one generated image supplied separately in the final instructions.
 </FEATURE>
 """
 
@@ -129,7 +129,7 @@ Create a full HTML page using this content with the following features.
 	7.	Dense, Column-Based Content - Articles were arranged in multi-column layouts, often with narrow text blocks to mimic print magazines.
 	8.	Interactive Elements (But No Flash Yet) - Some early JavaScript rollovers for links or mouseover effects in navigation.
 	9.	Dotted or Pixel Borders - Thin, dotted-line dividers were common, creating a “hacked” or digital feel.
-    10. No images!
+    10. Include one generated image supplied separately in the final instructions.
 </FEATURE>
 """
 
@@ -156,7 +156,7 @@ Post count, join date, and user rank/title (e.g., “Newbie,” “Senior Member
 Forums had fixed-width layouts with light or dark themes (Blue, Grey, or Black)
 Alternating row colors to differentiate posts
 Basic buttons like Reply, Quote, Report, and Edit
-no images
+include one generated image supplied separately in the final instructions
 inline CSS
 3-5 fictional replies
 </FEATURE>
