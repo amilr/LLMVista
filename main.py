@@ -15,9 +15,10 @@ from dotenv import load_dotenv
 import prompts
 import random
 from datetime import datetime, timedelta
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 CACHE_TIMEOUT = 300
+MAX_FOLLOW_DEPTH = 5
 TEXT_MODEL = 'gemini-3.5-flash'
 IMAGE_MODEL = 'gemini-3.1-flash-lite-image'
 SEARCH_GENERATION_CONFIG = {'thinking_level': 'minimal'}
@@ -67,6 +68,43 @@ class SearchResult(BaseModel):
 
 class SearchResults(BaseModel):
     items: List[SearchResult]
+
+
+class PageContext(SearchResult):
+    page_id: str
+    parent_id: Optional[str] = None
+    depth: int = 0
+    link_label: Optional[str] = None
+
+
+def page_context_cache_key(page_id):
+    return 'page_context:{}'.format(page_id)
+
+
+def page_html_cache_key(page_id):
+    return 'page_html:{}'.format(page_id)
+
+
+def make_page_id(*parts):
+    return hashlib.sha256('\n'.join(parts).encode('utf-8')).hexdigest()
+
+
+def cache_page_context(page_context):
+    cache.set(
+        page_context_cache_key(page_context.page_id),
+        page_context.model_dump_json(),
+        timeout=CACHE_TIMEOUT,
+    )
+
+
+def get_page_context(page_id):
+    serialized = cache.get(page_context_cache_key(page_id))
+    return PageContext.model_validate_json(serialized) if serialized else None
+
+
+def clean_follow_value(value, limit):
+    value = re.sub(r'\s+', ' ', value or '').strip()
+    return value[:limit]
 
 
 def generate_random_date() -> Tuple[str, str]:
@@ -127,6 +165,11 @@ it in the requested layout.
 Return only the HTML fragment that belongs inside the page body. Do not return
 <!doctype>, <html>, <head>, or <body> tags, and do not wrap the response in a
 Markdown code fence. Use inline CSS as requested.
+
+Make content links feel like related pages in a fictional web. Give each such
+link a descriptive label and a data-link-kind attribute: related, profile,
+journal, forum, magazine, or personal. Use data-link-kind="ui" for controls
+such as Home, Reply, Quote, Edit, or Report that should not open a new page.
 """
 
 
@@ -157,6 +200,29 @@ LOADING_COMPLETE_SCRIPT = """<script>
 </script>
 """
 PAGE_SHELL_END = "</main></body></html>"
+
+
+def get_follow_links_script(page_id):
+    return """<script>
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('a');
+  if (!link || link.dataset.linkKind === 'ui' || link.target === '_blank') return;
+  const href = link.getAttribute('href') || '';
+  if (!href || href.startsWith('#') || /^(mailto:|tel:|javascript:)/i.test(href)) return;
+
+  const label = (link.textContent || link.getAttribute('title') || href).trim();
+  if (!label) return;
+  event.preventDefault();
+  const query = new URLSearchParams({
+    parent: '__PAGE_ID__',
+    label: label.slice(0, 160),
+    target: href.slice(0, 300),
+    kind: link.dataset.linkKind || 'related',
+  });
+  window.location.assign('/follow?' + query.toString());
+});
+</script>
+""".replace('__PAGE_ID__', page_id)
 
 
 def get_image_filename(search_result):
@@ -413,27 +479,83 @@ def image_status(image_filename):
 
 @app.route('/go', methods=['GET'])
 def go():
-    request_started_at = time.perf_counter()
     url = request.args.get('url')
-    
-    # Get cache key from session and retrieve results from cache
     cache_key = session.get('search_results_key')
     if not cache_key or not cache.has(cache_key):
         return "Search results expired, please search again", 404
-    
+
     search_results_json = cache.get(cache_key)
     search_results = SearchResults.model_validate_json(search_results_json)
     search_result = next((result for result in search_results.items if result.url == url), None)
-
-    # reset search results to extend timeout
     cache.set(cache_key, search_results_json, timeout=CACHE_TIMEOUT)
-
     if not search_result:
         return "URL not found in search results", 404
-    
-    url_key = f'url:{url}'
+
+    page_context = PageContext(
+        **search_result.model_dump(),
+        page_id=make_page_id('root', search_result.url),
+    )
+    cache_page_context(page_context)
+    return render_page(page_context)
+
+
+@app.route('/follow', methods=['GET'])
+def follow():
+    parent_id = request.args.get('parent', '')
+    link_label = clean_follow_value(request.args.get('label', ''), 160)
+    link_target = clean_follow_value(request.args.get('target', ''), 300)
+    link_kind = clean_follow_value(request.args.get('kind', 'related'), 32).lower()
+    if not re.fullmatch(r'[0-9a-f]{64}', parent_id) or not link_label:
+        return 'Invalid link', 400
+
+    parent = get_page_context(parent_id)
+    if not parent:
+        return 'This page context has expired. Please search again.', 404
+    if parent.depth >= MAX_FOLLOW_DEPTH:
+        return 'You have reached the end of this link trail. Please start a new search.', 400
+
+    child_id = make_page_id(parent.page_id, link_kind, link_label, link_target)
+    child = get_page_context(child_id)
+    if not child:
+        child_type = {
+            'profile': 'friendster',
+            'friendster': 'friendster',
+            'forum': 'forum',
+            'journal': 'journal',
+            'magazine': 'magazine',
+            'personal': 'personal',
+        }.get(link_kind, parent.type)
+        child = PageContext(
+            page_id=child_id,
+            parent_id=parent.page_id,
+            depth=parent.depth + 1,
+            link_label=link_label,
+            title=link_label,
+            meta=(
+                'A related fictional page reached from "{}". The visitor followed '
+                'the link "{}" ({}) from {}. Preserve relevant people, places, '
+                'events, and era, but make this page a distinct destination.'
+            ).format(parent.title, link_label, link_target or 'linked page', parent.meta),
+            url='follow://{}'.format(child_id),
+            type=child_type,
+        )
+        cache_page_context(child)
+        logger.info(
+            'follow link created parent=%s child=%s kind=%s label=%r',
+            parent.page_id[:8], child.page_id[:8], link_kind, link_label,
+        )
+    else:
+        logger.info('follow link context cache hit child=%s', child.page_id[:8])
+    return render_page(child)
+
+
+def render_page(page_context):
+    request_started_at = time.perf_counter()
+    search_result = page_context
+    url = page_context.url
+    url_key = page_html_cache_key(page_context.page_id)
     if cache.has(url_key):
-        logger.info('page cache hit url=%s duration=%.2fs', url, time.perf_counter() - request_started_at)
+        logger.info('page cache hit page=%s duration=%.2fs', page_context.page_id[:8], time.perf_counter() - request_started_at)
         return cache.get(url_key)
 
     # Create streaming response
@@ -454,6 +576,7 @@ def go():
         image_status_url = url_for('image_status', image_filename=image_filename)
         image_loader_script = get_image_loader_script(image_filename, image_status_url)
         image_slot_fallback = get_image_slot_fallback()
+        follow_links_script = get_follow_links_script(page_context.page_id)
         prompt += """
 
 Do not include any <img> elements. Include exactly one empty placeholder where
@@ -466,6 +589,7 @@ The application replaces this placeholder with the generated illustration.
         # The visible loading shell has done its job; reveal generated content.
         yield LOADING_COMPLETE_SCRIPT
         yield image_loader_script
+        yield follow_links_script
         
         # Stream the response chunks
         html_buffer = ""
@@ -537,7 +661,7 @@ The application replaces this placeholder with the generated illustration.
         
         # Cache a complete document so repeat visits return immediately.
         final_html = (
-            loading_shell + LOADING_COMPLETE_SCRIPT + image_loader_script + html_buffer
+            loading_shell + LOADING_COMPLETE_SCRIPT + image_loader_script + follow_links_script + html_buffer
             + image_slot_fallback + PAGE_SHELL_END
         )
         cache.set(url_key, final_html)
