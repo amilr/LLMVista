@@ -111,8 +111,10 @@ def get_webpage_prompt(page_type, title, content):
     elif page_type == 'personal':
         prompt = random.choice([
             prompts.PERSONAL_1,
-            prompts.PERSONAL_2
+            prompts.PERSONAL_2,
             ])
+    elif page_type == 'friendster':
+        prompt = prompts.PERSONAL_3
     else:
         return None
     

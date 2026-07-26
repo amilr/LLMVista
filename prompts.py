@@ -8,6 +8,7 @@ journal - a personal journal or blog
 magazine - a magazine article
 forum - a forum post
 personal - a personal homepage
+friendster - an early-2000s social-network profile
 
 Generate the following fictional properties for each result:
 1. title
@@ -197,6 +198,37 @@ Create a full HTML page using this content with the following features.
 <FEATURES>
 Colorful
 Filled with SVG animations
+inline CSS
+</FEATURE>
+"""
+
+PERSONAL_3 = """
+<CONTENT>
+{}
+</CONTENT>
+
+<TITLE>
+{}
+<TITLE>
+
+Create a full HTML page using this content with the following features.
+<FEATURES>
+Friendster-inspired early-2000s social-network profile, without copying any
+real logo or branded wording.
+A narrow, centered white profile card on a pale blue-gray background, using
+Arial or Verdana, 11–13px body text, thin blue borders, dotted separators,
+and subtly glossy light-blue navigation or action buttons.
+A compact top navigation bar with fictional links such as Home, Search,
+Friends, and Messages, plus a small signed-in greeting.
+Use a left profile column with a display name, age/location, last-login detail,
+relationship status, profile-view count, a fictional “Add as Friend” button,
+and the required #llmvista-image-slot inside the profile-photo frame.
+Use the main column for About Me, interests, favorite music/films/books, and
+three short, affectionate, slightly cheesy testimonials from fictional friends.
+Include a lower grid of 6–8 tiny friend cards with placeholder initials or
+colored boxes (not image elements), names, and short status lines.
+Finish with a dense early-web footer containing Help, Terms, Privacy, and a
+“best viewed at 1024×768” note.
 inline CSS
 </FEATURE>
 """
