@@ -20,10 +20,10 @@ from typing import List, Optional, Tuple
 
 CACHE_TIMEOUT = 600
 MAX_FOLLOW_DEPTH = 5
-TEXT_MODEL = 'gemini-3.8-flash'
+TEXT_MODEL = 'gemini-3.6-flash'
 IMAGE_MODEL = 'gemini-nano-banana-2.1'
-SEARCH_GENERATION_CONFIG = {'thinking_level': 'low'}
-HTML_GENERATION_CONFIG = {'thinking_level': 'low'}
+SEARCH_GENERATION_CONFIG = {'thinking_level': 'minimal'}
+HTML_GENERATION_CONFIG = {'thinking_level': 'minimal'}
 IMAGE_GENERATION_CONFIG = {'thinking_level': 'minimal'}
 
 load_dotenv()
