@@ -17,12 +17,13 @@ import random
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
-CACHE_TIMEOUT = 300
+CACHE_TIMEOUT = 600
 MAX_FOLLOW_DEPTH = 5
-TEXT_MODEL = 'gemini-3.5-flash'
-IMAGE_MODEL = 'gemini-3.1-flash-lite-image'
-SEARCH_GENERATION_CONFIG = {'thinking_level': 'minimal'}
-HTML_GENERATION_CONFIG = {'thinking_level': 'minimal'}
+TEXT_MODEL = 'gemini-3.8-flash'
+IMAGE_MODEL = 'gemini-nano-banana-2.1'
+SEARCH_GENERATION_CONFIG = {'thinking_level': 'low'}
+HTML_GENERATION_CONFIG = {'thinking_level': 'low'}
+IMAGE_GENERATION_CONFIG = {'thinking_level': 'minimal'}
 
 load_dotenv()
 
@@ -75,6 +76,7 @@ class PageContext(SearchResult):
     parent_id: Optional[str] = None
     depth: int = 0
     link_label: Optional[str] = None
+    style_id: Optional[str] = None
 
 
 def page_context_cache_key(page_id):
@@ -130,47 +132,13 @@ def get_meta_prompt(page_type, title, topic):
     else:
         return None
 
-def get_webpage_prompt(page_type, title, content):
-    if page_type == 'journal':
-        prompt = random.choice([
-            prompts.JOURNAL_1,
-            prompts.JOURNAL_2,
-            prompts.JOURNAL_3
-            ])
-    elif page_type == 'magazine':
-        prompt = random.choice([
-            prompts.EZINE_1,
-            prompts.EZINE_2
-            ])
-    elif page_type == 'forum':
-        prompt = random.choice([
-            prompts.FORUM_1
-            ])
-    elif page_type == 'personal':
-        prompt = random.choice([
-            prompts.PERSONAL_1,
-            prompts.PERSONAL_2,
-            ])
-    elif page_type == 'friendster':
-        prompt = prompts.PERSONAL_3
-    else:
+def get_webpage_prompt(page_type, title, content, style_id=None):
+    style_ids = prompts.STYLE_IDS_BY_PAGE_TYPE.get(page_type)
+    if not style_ids:
         return None
-    
-    return prompt.format(content, title) + """
+    style_id = style_id or random.choice(style_ids)
+    return prompts.build_webpage_prompt(page_type, title, content, style_id)
 
-The CONTENT section is a page brief, not finished copy. Write the complete
-original article, post, replies, or personal-page text yourself before placing
-it in the requested layout.
-
-Return only the HTML fragment that belongs inside the page body. Do not return
-<!doctype>, <html>, <head>, or <body> tags, and do not wrap the response in a
-Markdown code fence. Use inline CSS as requested.
-
-Make content links feel like related pages in a fictional web. Give each such
-link a descriptive label and a data-link-kind attribute: related, profile,
-journal, forum, magazine, or personal. Use data-link-kind="ui" for controls
-such as Home, Reply, Quote, Edit, or Report that should not open a new page.
-"""
 
 
 def get_loading_shell(title):
@@ -205,14 +173,21 @@ PAGE_SHELL_END = "</main></body></html>"
 def get_follow_links_script(page_id):
     return """<script>
 document.addEventListener('click', (event) => {
-  const link = event.target.closest('a');
-  if (!link || link.dataset.linkKind === 'ui' || link.target === '_blank') return;
-  const href = link.getAttribute('href') || '';
-  if (!href || href.startsWith('#') || /^(mailto:|tel:|javascript:)/i.test(href)) return;
+  const link = event.target.closest?.('a');
+  if (!link || !link.closest('#llmvista-page') || link.dataset.linkKind === 'ui') return;
+  const href = (link.getAttribute('href') || '').trim();
+  if (/^(mailto:|tel:|javascript:|data:)/i.test(href)) return;
+  if (href.startsWith('#') && href.length > 1) {
+    let anchor = href.slice(1);
+    try { anchor = decodeURIComponent(anchor); } catch (_) {}
+    if (document.getElementById(anchor) || document.getElementsByName(anchor).length) return;
+  }
+  if (!href && !link.dataset.linkKind) return;
 
   const label = (link.textContent || link.getAttribute('title') || href).trim();
   if (!label) return;
   event.preventDefault();
+  event.stopImmediatePropagation();
   const query = new URLSearchParams({
     parent: '__PAGE_ID__',
     label: label.slice(0, 160),
@@ -220,14 +195,16 @@ document.addEventListener('click', (event) => {
     kind: link.dataset.linkKind || 'related',
   });
   window.location.assign('/follow?' + query.toString());
-});
+}, true);
 </script>
 """.replace('__PAGE_ID__', page_id)
 
 
 def get_image_filename(search_result):
     return '{}.jpg'.format(
-        hashlib.sha256(search_result.url.encode('utf-8')).hexdigest()
+        hashlib.sha256('\n'.join((
+            search_result.url, search_result.style_id or '', IMAGE_MODEL
+        )).encode('utf-8')).hexdigest()
     )
 
 
@@ -302,23 +279,15 @@ def generate_page_image(client, search_result, content, image_filename=None):
         logger.info('image cache hit url=%s duration=%.2fs', search_result.url, elapsed)
     else:
         logger.info('image generation started url=%s model=%s', search_result.url, IMAGE_MODEL)
-        image_prompt = """Create one editorial illustration for a fictional early-web page.
-The page title is: {title}
-The page type is: {page_type}
-The page content is:
-{content}
-
-Match the visual era and mood of the page. Do not add readable text, logos, or
-watermarks. Compose it as a 4:3 image suitable for placement inside an article.""".format(
-            title=search_result.title,
-            page_type=search_result.type,
-            content=content[:3000],
+        image_prompt = prompts.build_image_prompt(
+            search_result.type, search_result.title, content, search_result.style_id
         )
 
         try:
             image_response = client.interactions.create(
                 model=IMAGE_MODEL,
                 input=image_prompt,
+                generation_config=IMAGE_GENERATION_CONFIG,
                 response_format={
                     'type': 'image',
                     'mime_type': 'image/jpeg',
@@ -491,9 +460,10 @@ def go():
     if not search_result:
         return "URL not found in search results", 404
 
-    page_context = PageContext(
+    page_id = make_page_id('root', search_result.url)
+    page_context = get_page_context(page_id) or PageContext(
         **search_result.model_dump(),
-        page_id=make_page_id('root', search_result.url),
+        page_id=page_id,
     )
     cache_page_context(page_context)
     return render_page(page_context)
@@ -558,6 +528,11 @@ def render_page(page_context):
         logger.info('page cache hit page=%s duration=%.2fs', page_context.page_id[:8], time.perf_counter() - request_started_at)
         return cache.get(url_key)
 
+    # Persist one design so HTML, background images, and later renders agree.
+    if not page_context.style_id:
+        page_context.style_id = random.choice(prompts.STYLE_IDS_BY_PAGE_TYPE[page_context.type])
+    cache_page_context(page_context)
+
     # Create streaming response
     def generate_html():
         page_started_at = time.perf_counter()
@@ -571,21 +546,14 @@ def render_page(page_context):
         # replaces the former separate article-generation call.
         page_brief = search_result.meta
         logger.info('page composition started url=%s', url)
-        prompt = get_webpage_prompt(search_result.type, search_result.title, page_brief)
+        prompt = get_webpage_prompt(
+            search_result.type, search_result.title, page_brief, search_result.style_id
+        )
         image_filename = start_page_image_generation(search_result, page_brief)
         image_status_url = url_for('image_status', image_filename=image_filename)
         image_loader_script = get_image_loader_script(image_filename, image_status_url)
         image_slot_fallback = get_image_slot_fallback()
         follow_links_script = get_follow_links_script(page_context.page_id)
-        prompt += """
-
-Do not include any <img> elements. Include exactly one empty placeholder where
-an illustration belongs naturally in your layout, for example after the opening
-paragraph or inside a sidebar:
-<div id="llmvista-image-slot">Generating illustration…</div>
-The application replaces this placeholder with the generated illustration.
-"""
-
         # The visible loading shell has done its job; reveal generated content.
         yield LOADING_COMPLETE_SCRIPT
         yield image_loader_script
@@ -631,11 +599,7 @@ The application replaces this placeholder with the generated illustration.
 
                 html_buffer += chunk_text
 
-                if len(html_buffer) > 20000:
-                    break
-                
-                # Check if we have complete HTML tags to send
-                # This is a simple approach - you might need more sophisticated parsing
+                # Let the model finish its fragment, including all closing tags.
                 yield chunk_text
 
         # Use a footer slot only when the model omitted the requested placement.
