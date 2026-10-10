@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from google import genai
 from dotenv import load_dotenv
 import prompts
+from retro_images import encode_period_image
 import random
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
@@ -132,12 +133,12 @@ def get_meta_prompt(page_type, title, topic):
     else:
         return None
 
-def get_webpage_prompt(page_type, title, content, style_id=None):
+def get_webpage_prompt(page_type, title, content, style_id=None, image_treatment=None):
     style_ids = prompts.STYLE_IDS_BY_PAGE_TYPE.get(page_type)
     if not style_ids:
         return None
     style_id = style_id or random.choice(style_ids)
-    return prompts.build_webpage_prompt(page_type, title, content, style_id)
+    return prompts.build_webpage_prompt(page_type, title, content, style_id, image_treatment)
 
 
 
@@ -201,10 +202,13 @@ document.addEventListener('click', (event) => {
 
 
 def get_image_filename(search_result):
-    return '{}.jpg'.format(
+    treatment = prompts.get_image_treatment(search_result.style_id, search_result.url)
+    extension = 'png' if prompts.IMAGE_TREATMENTS[treatment]['format'] == 'PNG' else 'jpg'
+    return '{}.{}'.format(
         hashlib.sha256('\n'.join((
-            search_result.url, search_result.style_id or '', IMAGE_MODEL
-        )).encode('utf-8')).hexdigest()
+            search_result.url, search_result.style_id or '', IMAGE_MODEL,
+            prompts.IMAGE_POLICY_VERSION, treatment,
+        )).encode('utf-8')).hexdigest(), extension,
     )
 
 
@@ -212,9 +216,15 @@ def get_image_url(image_filename):
     return '{}/generated/{}'.format(app.static_url_path or '/static', image_filename)
 
 
-def get_image_loader_script(image_filename, status_url):
+def get_image_loader_script(image_filename, status_url, image_treatment='compressed'):
     safe_status_url = html.escape(status_url, quote=True)
     safe_image_url = html.escape(get_image_url(image_filename), quote=True)
+    asset = prompts.IMAGE_TREATMENTS[image_treatment]
+    image_style = 'display:block;width:{}px;max-width:100%;height:auto;margin:0 auto;'.format(
+        asset['display_width']
+    )
+    if image_treatment == 'pixel':
+        image_style += 'image-rendering:pixelated;'
     script = """<script>
 (() => {
   const statusUrl = '__STATUS_URL__';
@@ -229,7 +239,7 @@ def get_image_loader_script(image_filename, status_url):
       const response = await fetch(statusUrl, { cache: 'no-store' });
       const result = await response.json();
       if (result.status === 'ready') {
-        slot.innerHTML = '<img src="' + imageUrl + '" alt="Generated illustration" style="display:block;max-width:100%;height:auto;margin:0 auto;">';
+        slot.innerHTML = '<img src="' + imageUrl + '" alt="__IMAGE_ALT__" style="__IMAGE_STYLE__">';
         return;
       }
       if (result.status === 'failed') {
@@ -247,6 +257,8 @@ def get_image_loader_script(image_filename, status_url):
 """
     return script.replace('__STATUS_URL__', safe_status_url).replace(
         '__IMAGE_URL__', safe_image_url
+    ).replace('__IMAGE_STYLE__', image_style).replace(
+        '__IMAGE_ALT__', 'Generated ' + asset['name']
     )
 
 
@@ -280,7 +292,8 @@ def generate_page_image(client, search_result, content, image_filename=None):
     else:
         logger.info('image generation started url=%s model=%s', search_result.url, IMAGE_MODEL)
         image_prompt = prompts.build_image_prompt(
-            search_result.type, search_result.title, content, search_result.style_id
+            search_result.type, search_result.title, content, search_result.style_id,
+            prompts.get_image_treatment(search_result.style_id, search_result.url),
         )
 
         try:
@@ -298,11 +311,14 @@ def generate_page_image(client, search_result, content, image_filename=None):
             )
             image_data = image_response.output_image.data
             if not image_data:
-                return None
+                return None, time.perf_counter() - started_at
+
+            treatment = prompts.get_image_treatment(search_result.style_id, search_result.url)
+            image_bytes = encode_period_image(base64.b64decode(image_data), treatment)
 
             os.makedirs(image_directory, exist_ok=True)
             with open(image_path, 'wb') as image_file:
-                image_file.write(base64.b64decode(image_data))
+                image_file.write(image_bytes)
         except Exception as error:
             # A page remains usable if image generation is unavailable or blocked.
             elapsed = time.perf_counter() - started_at
@@ -433,7 +449,7 @@ def search():
 
 @app.route('/image-status/<image_filename>', methods=['GET'])
 def image_status(image_filename):
-    if not re.fullmatch(r'[0-9a-f]{64}\.jpg', image_filename):
+    if not re.fullmatch(r'[0-9a-f]{64}\.(?:jpg|png)', image_filename):
         return jsonify({'status': 'failed'}), 404
 
     image_path = os.path.join(app.static_folder, 'generated', image_filename)
@@ -545,13 +561,15 @@ def render_page(page_context):
         # The HTML model writes the page content directly from this brief. This
         # replaces the former separate article-generation call.
         page_brief = search_result.meta
+        image_treatment = prompts.get_image_treatment(search_result.style_id, search_result.url)
         logger.info('page composition started url=%s', url)
         prompt = get_webpage_prompt(
-            search_result.type, search_result.title, page_brief, search_result.style_id
+            search_result.type, search_result.title, page_brief, search_result.style_id,
+            image_treatment,
         )
         image_filename = start_page_image_generation(search_result, page_brief)
         image_status_url = url_for('image_status', image_filename=image_filename)
-        image_loader_script = get_image_loader_script(image_filename, image_status_url)
+        image_loader_script = get_image_loader_script(image_filename, image_status_url, image_treatment)
         image_slot_fallback = get_image_slot_fallback()
         follow_links_script = get_follow_links_script(page_context.page_id)
         # The visible loading shell has done its job; reveal generated content.
